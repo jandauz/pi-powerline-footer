@@ -8,6 +8,11 @@ export type ThemeLike = Pick<Theme, "fg">;
 // Semantic color names for segments
 export type SemanticColor =
   | "model"
+  | "modelPurple"
+  | "modelCoral"
+  | "modelMint"
+  | "modelBlue"
+  | "modelNeutral"
   | "shellMode"
   | "path"
   | "gitDirty"
@@ -38,13 +43,11 @@ export const BUILTIN_STATUS_LINE_SEGMENT_IDS = [
   "queue",
   "token_in",
   "token_out",
-  "token_total",
   "cost",
   "context_pct",
   "context_total",
   "time_spent",
   "time",
-  "session",
   "hostname",
   "cache_read",
   "cache_write",

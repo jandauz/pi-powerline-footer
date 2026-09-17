@@ -17,19 +17,35 @@ import type { ColorScheme, ColorValue, SemanticColor, ThemeLike } from "./types.
 export interface PowerlineThemeConfig {
   colors?: unknown;
   icons?: unknown;
+  pill?: unknown;
 }
+
+export interface PillTheme {
+  surface: `#${string}`;
+  iconForeground: `#${string}`;
+}
+
+const DEFAULT_PILL_THEME: PillTheme = {
+  surface: "#303442",
+  iconForeground: "#171922",
+};
 
 // Default color scheme (uses pi theme colors)
 const DEFAULT_COLORS: Required<ColorScheme> = {
-  model: "#d787af",  // Pink/mauve (matching original colors.ts)
+  model: "#8b8f9a", // Legacy model override; family accents below are used by default.
+  modelPurple: "#c792ea",
+  modelCoral: "#ff6b81",
+  modelMint: "#65d6a6",
+  modelBlue: "#66b9ff",
+  modelNeutral: "#8b8f9a",
   shellMode: "accent",
   path: "#00afaf",  // Teal/cyan (matching original colors.ts)
   gitDirty: "warning",
   gitClean: "success",
-  thinking: "thinkingOff",
-  thinkingMinimal: "thinkingMinimal",
-  thinkingLow: "thinkingLow",
-  thinkingMedium: "thinkingMedium",
+  thinking: "#8b8f9a",
+  thinkingMinimal: "#77839a",
+  thinkingLow: "#66b9ff",
+  thinkingMedium: "#55d6e8",
   context: "dim",
   contextWarn: "warning",
   contextError: "error",
@@ -141,6 +157,20 @@ function loadUserTheme(): ColorScheme {
   userThemeCacheTime = now;
   userThemeCacheKey = cacheKey;
   return userThemeCache;
+}
+
+function configuredHex(value: unknown, fallback: `#${string}`): `#${string}` {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value as `#${string}` : fallback;
+}
+
+/** Raised-surface colors are independent from the host's semantic theme. */
+export function getPillTheme(): PillTheme {
+  const raw = loadThemeConfig().pill;
+  if (!isRecord(raw)) return { ...DEFAULT_PILL_THEME };
+  return {
+    surface: configuredHex(raw.surface, DEFAULT_PILL_THEME.surface),
+    iconForeground: configuredHex(raw.iconForeground, DEFAULT_PILL_THEME.iconForeground),
+  };
 }
 
 /**

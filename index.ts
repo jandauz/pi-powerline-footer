@@ -26,8 +26,14 @@ import type { BashModeSettings } from "./bash-mode/types.ts";
 import { getPreset, PRESETS } from "./presets.ts";
 import { getAgentPath } from "./paths.ts";
 import { collectHiddenExtensionStatusKeys, getNotificationExtensionStatuses, mergeSegmentOptions, mergeSegmentsWithCustomItems, nextPowerlineSettingWithOptions, nextPowerlineSettingWithPreset, parsePowerlineConfig } from "./powerline-config.ts";
-import { getSeparator } from "./separators.ts";
 import { renderSegment } from "./segments.ts";
+import { getIcons, hasNerdFonts } from "./icons.ts";
+import {
+  getPillLayoutWidth,
+  joinAnchoredPillGroups,
+  renderPills,
+  splitAnchoredPillRows,
+} from "./pill-renderer.ts";
 import { resolveThinkingLevelSelection } from "./thinking-level.ts";
 import { getGitStatus, invalidateGitStatus, invalidateGitBranch, subscribeGitUpdates } from "./git-status.ts";
 import { SessionBranchCache, SessionTokenStatsCache } from "./token-stats.ts";
@@ -38,8 +44,13 @@ import { getEditorAutocompleteProvider, passAutocompleteProviderThroughPreviousE
 import { EditorPerfProfiler, readEditorPerfOptions } from "./editor-performance.ts";
 import { CoreContextUsageCache, estimateInitialContextTokens, estimateUnknownContextUsage, resolveDisplayContextUsage, type CoreContextUsage } from "./context-usage.ts";
 import { isStaleExtensionContextError, shouldShowStartupWelcome } from "./lifecycle.ts";
-import { getDefaultColors } from "./theme.ts";
+import { getDefaultColors, getPillTheme } from "./theme.ts";
 import { registerCdCommand } from "./cd-command.ts";
+import {
+  createProviderLimitsAdapter,
+  resolveClaudeCodeOAuthCredential,
+  resolveOAuthCredential,
+} from "./provider-limits.ts";
 import {
   isSupportedSuperShortcut,
   matchesConfiguredShortcut,
@@ -1055,13 +1066,14 @@ function renderSegmentWithWidth(
 /** Build content string from pre-rendered parts */
 function buildContentFromParts(
   parts: string[],
-  separatorStyle: StatusLineSeparatorStyle,
+  _separatorStyle: StatusLineSeparatorStyle,
 ): string {
   if (parts.length === 0) return "";
-  const separatorDef = getSeparator(separatorStyle);
-  const sepAnsi = getFgAnsiCode("sep");
-  const sep = separatorDef.left;
-  return " " + parts.join(` ${sepAnsi}${sep}${ansi.reset} `) + ansi.reset + " ";
+  const pillTheme = getPillTheme();
+  return renderPills(parts, hasNerdFonts(), getFgAnsiCode("sep"), {
+    icons: Object.values(getIcons()),
+    ...pillTheme,
+  });
 }
 
 /**
@@ -1072,64 +1084,47 @@ function buildContentFromParts(
 function computeResponsiveLayout(
   ctx: SegmentContext,
   presetDef: ReturnType<typeof getPreset>,
-  allSegmentIds: StatusLineSegmentId[],
+  segmentIds: {
+    left: StatusLineSegmentId[];
+    right: StatusLineSegmentId[];
+    secondary: StatusLineSegmentId[];
+  },
   availableWidth: number
 ): { topContent: string; secondaryContent: string } {
   const separatorStyle = config.separator ?? presetDef.separator;
-  const separatorDef = getSeparator(separatorStyle);
-  const sepWidth = visibleWidth(separatorDef.left) + 2; // separator + spaces around it
+  const renderVisible = (ids: readonly StatusLineSegmentId[]) => ids.flatMap((segId) => {
+    const rendered = renderSegmentWithWidth(segId, ctx);
+    return rendered.visible ? [{ content: rendered.content, width: rendered.width }] : [];
+  });
+  const left = renderVisible(segmentIds.left);
+  const right = renderVisible(segmentIds.right);
+  const configuredSecondary = renderVisible(segmentIds.secondary);
+  const split = splitAnchoredPillRows(
+    left.map((segment) => segment.width),
+    right.map((segment) => segment.width),
+    configuredSecondary.map((segment) => segment.width),
+    availableWidth,
+  );
 
-  // Render all segments and get their widths
-  const renderedSegments: { content: string; width: number }[] = [];
-  for (const segId of allSegmentIds) {
-    const { content, width, visible } = renderSegmentWithWidth(segId, ctx);
-    if (visible) {
-      renderedSegments.push({ content, width });
-    }
-  }
-
-  if (renderedSegments.length === 0) {
-    return { topContent: "", secondaryContent: "" };
-  }
-
-  // Calculate how many segments fit in top bar
-  // Account for: leading space (1) + trailing space (1) = 2 chars overhead
-  const baseOverhead = 2;
-  let currentWidth = baseOverhead;
-  let topSegments: string[] = [];
-  let overflowSegments: { content: string; width: number }[] = [];
-  let overflow = false;
-
-  for (const seg of renderedSegments) {
-    const neededWidth = seg.width + (topSegments.length > 0 ? sepWidth : 0);
-
-    if (!overflow && currentWidth + neededWidth <= availableWidth) {
-      topSegments.push(seg.content);
-      currentWidth += neededWidth;
-    } else {
-      overflow = true;
-      overflowSegments.push(seg);
-    }
-  }
-
-  // Fit overflow segments into secondary row (same width constraint)
-  // Stop at first non-fitting segment to preserve ordering
-  let secondaryWidth = baseOverhead;
-  let secondarySegments: string[] = [];
-
-  for (const seg of overflowSegments) {
-    const neededWidth = seg.width + (secondarySegments.length > 0 ? sepWidth : 0);
-    if (secondaryWidth + neededWidth <= availableWidth) {
-      secondarySegments.push(seg.content);
-      secondaryWidth += neededWidth;
-    } else {
-      break;
-    }
-  }
+  const topLeft = left.slice(0, split.topLeftCount);
+  const topRight = right.slice(split.topRightStart);
+  const overflow = [
+    ...left.slice(split.topLeftCount),
+    ...right.slice(0, split.topRightStart),
+    ...configuredSecondary,
+  ].slice(0, split.secondaryCount);
+  const topLeftContent = buildContentFromParts(topLeft.map((segment) => segment.content), separatorStyle);
+  const topRightContent = buildContentFromParts(topRight.map((segment) => segment.content), separatorStyle);
 
   return {
-    topContent: buildContentFromParts(topSegments, separatorStyle),
-    secondaryContent: buildContentFromParts(secondarySegments, separatorStyle),
+    topContent: joinAnchoredPillGroups(
+      topLeftContent,
+      getPillLayoutWidth(topLeft.map((segment) => segment.width)),
+      topRightContent,
+      getPillLayoutWidth(topRight.map((segment) => segment.width)),
+      availableWidth,
+    ),
+    secondaryContent: buildContentFromParts(overflow.map((segment) => segment.content), separatorStyle),
   };
 }
 
@@ -1184,6 +1179,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
   let welcomeHeaderActive = false;
   let welcomeRequest: AbortController | null = null;
   let welcomeTimer: ReturnType<typeof setTimeout> | null = null;
+  let providerLimitsTimer: ReturnType<typeof setInterval> | null = null;
   let lastUserPrompt = "";
   let showLastPrompt = true;
   let lastPromptRenderCache: {
@@ -1735,6 +1731,8 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     shellSession?.dispose();
     shellSession = null;
     sessionGeneration++;
+    if (providerLimitsTimer) clearInterval(providerLimitsTimer);
+    providerLimitsTimer = null;
     sessionStartTime = Date.now();
     currentCtx = ctx;
     footerDataRef = null;
@@ -1767,6 +1765,24 @@ export default function powerlineFooter(pi: ExtensionAPI) {
 
     if (ctx.hasUI) {
       ctx.ui.setStatus("stash", undefined);
+      const providerIcons = getIcons();
+      ctx.ui.setStatus("provider-limit-codex", [providerIcons.openai, "⚠"].filter(Boolean).join(" "));
+      ctx.ui.setStatus("provider-limit-claude", [providerIcons.claude, "⚠"].filter(Boolean).join(" "));
+
+      const generation = sessionGeneration;
+      const providerLimits = createProviderLimitsAdapter({
+        resolveOAuth: (provider) => resolveOAuthCredential(ctx.modelRegistry, provider),
+        resolveClaudeOAuth: () => resolveClaudeCodeOAuthCredential(),
+        fetch: (input, init) => fetch(input, init),
+        publish: (key, value) => {
+          if (sessionGeneration !== generation) return;
+          const icon = key === "provider-limit-codex" ? getIcons().openai : getIcons().claude;
+          ctx.ui.setStatus(key, [icon, value].filter(Boolean).join(" "));
+        },
+      });
+      void providerLimits.refreshAll();
+      providerLimitsTimer = setInterval(() => void providerLimits.refreshAll(), 60_000);
+      providerLimitsTimer.unref?.();
     }
 
     // Initialize vibe manager (needs modelRegistry from ctx)
@@ -1792,6 +1808,8 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     sessionGeneration++;
     dismissWelcome(ctx);
     statusRenderScheduler.cancel();
+    if (providerLimitsTimer) clearInterval(providerLimitsTimer);
+    providerLimitsTimer = null;
     restoreFooterStatusRepaintHook?.();
     restoreFooterStatusRepaintHook = null;
     stashShortcutInputUnsubscribe?.();
@@ -2813,7 +2831,11 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     }
 
     lastLayoutWidth = width;
-    lastLayoutResult = computeResponsiveLayout(segmentCtx, presetDef, allSegmentIds, width);
+    lastLayoutResult = computeResponsiveLayout(segmentCtx, presetDef, {
+      left: mergedSegments.leftSegments,
+      right: mergedSegments.rightSegments,
+      secondary: mergedSegments.secondarySegments,
+    }, width);
     lastLayoutTimestamp = now;
     layoutDirty = false;
     forceNextLayoutRecompute = false;

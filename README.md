@@ -25,7 +25,7 @@ Customizes the default [pi](https://github.com/badlogic/pi-mono) editor with a p
 
 **Live thinking level indicator** — Shows current thinking level (`think:off`, `think:med`, etc.) with per-level colors. High, xhigh, and max levels use a rainbow effect inspired by Claude Code's ultrathink.
 
-**Smart defaults** — Nerd Font auto-detection for iTerm, WezTerm, Kitty, Ghostty, Alacritty, and Kaku with ASCII fallbacks. Colors matched to oh-my-pi's dark theme.
+**Smart defaults** — Nerd Font auto-detection for iTerm, WezTerm, Kitty, Ghostty, Alacritty, and Kaku with ASCII fallbacks. Colors matched to oh-my-pi's dark theme. Provider-limit pills use the actual Codicon OpenAI (`U+EC81`) and Claude (`U+EC82`) logos. Install the bundled font with `npm run install:codicons` if it is not already available to the terminal; provider marks are omitted rather than replaced with unrelated glyphs.
 
 **Git integration** — Async status fetching with 1s cache TTL. Automatically invalidates on file writes/edits. Shows branch, staged (+), unstaged (*), and untracked (?) counts.
 
@@ -485,7 +485,7 @@ The origin remote is detected (SSH or HTTPS) and mapped to an icon: GitHub (), G
 
 ## Segments
 
-`model` · `thinking` · `shell_mode` · `path` · `git` · `subagents` · `token_in` · `token_out` · `token_total` · `cost` · `context_pct` · `context_total` · `time_spent` · `time` · `session` · `hostname` · `cache_read` · `cache_write` · `extension_statuses`
+`model` · `thinking` · `shell_mode` · `path` · `git` · `subagents` · `token_in` · `token_out` · `cost` · `context_pct` · `context_total` · `time_spent` · `time` · `hostname` · `cache_read` · `cache_write` · `extension_statuses`
 
 ## Separators
 
@@ -499,15 +499,19 @@ Colors are configurable via pi's theme system. Each preset defines its own color
 
 | Semantic | Theme Color | Description |
 |----------|-------------|-------------|
-| `model` | `#d787af` | Model name |
+| `modelPurple` | `#c792ea` | Astra / Fable model family |
+| `modelCoral` | `#ff6b81` | Sol / Opus model family |
+| `modelMint` | `#65d6a6` | Terra / Sonnet model family |
+| `modelBlue` | `#66b9ff` | Luna / Haiku model family |
+| `modelNeutral` | `#8b8f9a` | Unknown model family |
 | `shellMode` | `accent` | Bash mode segment |
 | `path` | `#00afaf` | Directory path |
 | `gitClean` | `success` | Git branch (clean) |
 | `gitDirty` | `warning` | Git branch (dirty) |
-| `thinking` | `thinkingOff` | Thinking level (`off`) |
-| `thinkingMinimal` | `thinkingMinimal` | Thinking level (`minimal`) |
-| `thinkingLow` | `thinkingLow` | Thinking level (`low`) |
-| `thinkingMedium` | `thinkingMedium` | Thinking level (`medium`) |
+| `thinking` | `#8b8f9a` | Thinking level (`off`, gray) |
+| `thinkingMinimal` | `#77839a` | Thinking level (`minimal`, slate) |
+| `thinkingLow` | `#66b9ff` | Thinking level (`low`, blue) |
+| `thinkingMedium` | `#55d6e8` | Thinking level (`medium`, cyan) |
 | `context` | `dim` | Context usage |
 | `contextWarn` | `warning` | Context usage >70% |
 | `contextError` | `error` | Context usage >90% |
@@ -520,8 +524,16 @@ Create `extensions/powerline-footer/theme.json` in the agent dir (`~/.pi/agent` 
 
 ```json
 {
+  "pill": {
+    "surface": "#303442",
+    "iconForeground": "#171922"
+  },
   "colors": {
-    "model": "accent",
+    "modelPurple": "#c792ea",
+    "modelCoral": "#ff6b81",
+    "modelMint": "#65d6a6",
+    "modelBlue": "#66b9ff",
+    "modelNeutral": "#8b8f9a",
     "shellMode": "accent",
     "path": "#00afaf",
     "gitClean": "success",
