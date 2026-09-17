@@ -1,8 +1,19 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { loadThemeConfig } from "./theme.ts";
+
+/** VS Code Codicons 0.0.45: codicon-openai and codicon-claude. */
+export const CODICON_ICONS = {
+  openai: "\uEC81",
+  claude: "\uEC82",
+} as const;
+export const CODICON_FONT_ASSET = new URL("./assets/Codicons.ttf", import.meta.url);
 
 export interface IconSet {
   pi: string;
   model: string;
+  thinking: string;
   folder: string;
   branch: string;
   git: string;
@@ -18,9 +29,10 @@ export interface IconSet {
   input: string;
   output: string;
   host: string;
-  session: string;
   auto: string;
   warning: string;
+  openai: string;
+  claude: string;
 }
 
 // Separator characters
@@ -56,6 +68,7 @@ export function getThinkingText(level: string): string | undefined {
 export const NERD_ICONS: IconSet = {
   pi: "\uE22C",         // nf-oct-pi (stylized pi icon)
   model: "\uEC19",      // nf-md-chip (model/AI chip)
+  thinking: "\u{F09D1}", // nf-md-brain
   folder: "\uF115",     // nf-fa-folder_open
   branch: "\uF126",     // nf-fa-code_fork (git branch)
   git: "\uF1D3",        // nf-fa-git (git logo)
@@ -71,15 +84,17 @@ export const NERD_ICONS: IconSet = {
   input: "\uF090",      // nf-fa-sign_in (input arrow)
   output: "\uF08B",     // nf-fa-sign_out (output arrow)
   host: "\uF109",       // nf-fa-laptop (host)
-  session: "\uF550",    // nf-md-identifier (session id)
   auto: "\u{F0068}",    // nf-md-lightning_bolt (auto-compact)
   warning: "\uF071",    // nf-fa-warning
+  openai: CODICON_ICONS.openai, // codicon-openai
+  claude: CODICON_ICONS.claude, // codicon-claude
 };
 
 // ASCII/Unicode fallback icons (matching oh-my-pi)
 export const ASCII_ICONS: IconSet = {
   pi: "π",
   model: "",
+  thinking: "",
   folder: "dir",
   branch: "⎇",
   git: "⎇",
@@ -95,9 +110,11 @@ export const ASCII_ICONS: IconSet = {
   input: "in:",
   output: "out:",
   host: "host",
-  session: "id",
   auto: "AC",
   warning: "!",
+  // Never substitute letters or unrelated marks for provider logos.
+  openai: "",
+  claude: "",
 };
 
 type PartialIconSet = Partial<IconSet>;
@@ -178,10 +195,21 @@ export function hasNerdFonts(): boolean {
   return nerdTerms.some(t => term.includes(t));
 }
 
+export function hasCodiconFontSupport(): boolean {
+  if (process.env.POWERLINE_CODICONS === "1") return true;
+  if (process.env.POWERLINE_CODICONS === "0") return false;
+  const candidates = process.platform === "darwin"
+    ? [join(homedir(), "Library", "Fonts", "Codicons.ttf"), "/Library/Fonts/Codicons.ttf"]
+    : [join(homedir(), ".local", "share", "fonts", "Codicons.ttf"), "/usr/local/share/fonts/Codicons.ttf"];
+  return candidates.some((path) => existsSync(path));
+}
+
 export function getIcons(): IconSet {
   const baseIcons = hasNerdFonts() ? NERD_ICONS : ASCII_ICONS;
+  const providerIcons = hasCodiconFontSupport() ? CODICON_ICONS : { openai: "", claude: "" };
   return {
     ...baseIcons,
+    ...providerIcons,
     ...sanitizeUserIconOverrides(loadThemeConfig().icons),
   };
 }
