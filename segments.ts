@@ -1,12 +1,13 @@
 import { hostname as osHostname } from "node:os";
 import { basename } from "node:path";
-import { visibleWidth } from "@earendil-works/pi-tui";
 import type { BuiltinStatusLineSegmentId, RenderedSegment, SegmentContext, SemanticColor, StatusLineSegment, StatusLineSegmentId } from "./types.ts";
 import { normalizeCompactExtensionStatus, normalizeExtensionStatusValue } from "./powerline-config.ts";
 import { fg, rainbow, applyColor } from "./theme.ts";
+import { costGradientColor } from "./cost-gradient.ts";
 import { getIcons, SEP_DOT, getThinkingText } from "./icons.ts";
 import { formatUsdCost } from "./currency-rates.ts";
 import { getGitRemoteHost } from "./git-status.ts";
+import { getModelColorSemantic } from "./model-colors.ts";
 import type { IconSet } from "./icons.ts";
 import type { GitHost } from "./git-status.ts";
 
@@ -70,7 +71,7 @@ const modelSegment: StatusLineSegment = {
       }
     }
 
-    return { content: color(ctx, "model", content), visible: true };
+    return { content: color(ctx, getModelColorSemantic(ctx.model), content), visible: true };
   },
 };
 
@@ -215,7 +216,7 @@ const thinkingSegment: StatusLineSegment = {
       xhigh: "xhigh",
     };
     const label = levelText[level] || level;
-    const content = `think:${label}`;
+    const content = withIcon(getIcons().thinking, `think:${label}`);
 
     if (level === "high" || level === "xhigh" || level === "max") {
       return { content: rainbow(content), visible: true };
@@ -291,22 +292,10 @@ const tokenOutSegment: StatusLineSegment = {
   },
 };
 
-const tokenTotalSegment: StatusLineSegment = {
-  id: "token_total",
-  render(ctx) {
-    const icons = getIcons();
-    const { input, output, cacheRead, cacheWrite } = ctx.usageStats;
-    const total = input + output + cacheRead + cacheWrite;
-    if (!total) return { content: "", visible: false };
-
-    const content = withIcon(icons.tokens, formatTokens(total));
-    return { content: color(ctx, "tokens", content), visible: true };
-  },
-};
-
 const costSegment: StatusLineSegment = {
   id: "cost",
   render(ctx) {
+    const icons = getIcons();
     const cost = ctx.usageStats.cost + (ctx.usageStats.subagentCost ?? 0);
     const usingSubscription = ctx.usingSubscription;
 
@@ -314,22 +303,26 @@ const costSegment: StatusLineSegment = {
       return { content: "", visible: false };
     }
 
-    const reportedCost = cost > 0 ? formatUsdCost(cost, ctx.options.cost?.currency) : null;
+    const reportedCost = cost > 0 ? withIcon(icons.cost, formatUsdCost(cost, ctx.options.cost?.currency)) : null;
+    const renderReportedCost = (text: string): RenderedSegment => ({
+      content: applyColor(ctx.theme, costGradientColor(cost), text),
+      visible: true,
+    });
     if (!usingSubscription) {
       return reportedCost
-        ? { content: color(ctx, "cost", reportedCost), visible: true }
+        ? renderReportedCost(reportedCost)
         : { content: "", visible: false };
     }
 
     const subscriptionDisplay = ctx.options.cost?.subscriptionDisplay ?? "subscription";
     if (subscriptionDisplay === "reported-cost" && reportedCost) {
-      return { content: color(ctx, "cost", reportedCost), visible: true };
+      return renderReportedCost(reportedCost);
     }
     if (subscriptionDisplay === "both" && reportedCost) {
-      return { content: color(ctx, "cost", `${reportedCost} (sub)`), visible: true };
+      return renderReportedCost(`${reportedCost} (sub)`);
     }
 
-    return { content: color(ctx, "cost", "(sub)"), visible: true };
+    return { content: color(ctx, "cost", withIcon(icons.cost, "(sub)")), visible: true };
   },
 };
 
@@ -421,17 +414,6 @@ const timeSegment: StatusLineSegment = {
   },
 };
 
-const sessionSegment: StatusLineSegment = {
-  id: "session",
-  render(ctx) {
-    const icons = getIcons();
-    const sessionId = ctx.sessionId;
-    const display = sessionId?.slice(0, 8) || "new";
-
-    return { content: withIcon(icons.session, display), visible: true };
-  },
-};
-
 const hostnameSegment: StatusLineSegment = {
   id: "hostname",
   render() {
@@ -518,13 +500,11 @@ export const SEGMENTS: Record<BuiltinStatusLineSegmentId, StatusLineSegment> = {
   queue: queueSegment,
   token_in: tokenInSegment,
   token_out: tokenOutSegment,
-  token_total: tokenTotalSegment,
   cost: costSegment,
   context_pct: contextPctSegment,
   context_total: contextTotalSegment,
   time_spent: timeSpentSegment,
   time: timeSegment,
-  session: sessionSegment,
   hostname: hostnameSegment,
   cache_read: cacheReadSegment,
   cache_write: cacheWriteSegment,
@@ -544,7 +524,10 @@ function renderCustomSegment(id: `custom:${string}`, ctx: SegmentContext): Rende
 
   let content = normalizedStatus;
   if (custom.prefix) {
-    content = `${custom.prefix}${SEP_DOT}${content}`;
+    // A trailing space lets icon-only custom pills opt out of the textual dot separator.
+    content = custom.prefix.endsWith(" ")
+      ? `${custom.prefix}${content}`
+      : `${custom.prefix}${SEP_DOT}${content}`;
   }
   if (custom.color && !custom.selfColorize) {
     content = applyColor(ctx.theme, custom.color, content);
